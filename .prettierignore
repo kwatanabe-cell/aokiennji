@@ -1,0 +1,14 @@
+node_modules
+.next*
+.data
+.env*
+.local-admin.txt
+public/fonts
+public/images
+public/templates
+tests/fixtures
+test-results
+playwright-report
+package-lock.json
+AGENTS.md
+CLAUDE.md

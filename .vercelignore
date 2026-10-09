@@ -1,0 +1,12 @@
+.env*
+!.env.example
+.data
+.local-admin.txt
+node_modules
+.next
+.next-e2e
+.next-build
+.next-live-ai
+test-results
+playwright-report
+coverage

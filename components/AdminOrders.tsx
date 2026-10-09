@@ -1,0 +1,117 @@
+'use client';
+import { useEffect, useState } from 'react';
+import type { Order } from '@/lib/contracts';
+import { api, datetime, errorMessage, yen } from './api';
+import { Empty, Notice, useNotice } from './AdminCommon';
+const labels: Record<Order['status'], string> = {
+  pending_approval: '承認待ち',
+  approved: '承認済み',
+  dispatched: '送信済み',
+  simulated: 'デモ送信済み',
+  failed: '送信失敗',
+  needs_reconciliation: '送信結果の確認が必要',
+};
+export default function AdminOrders() {
+  const [items, setItems] = useState<Order[]>([]),
+    [busy, setBusy] = useState('');
+  const n = useNotice();
+  async function load() {
+    try {
+      setItems(await api<Order[]>('/api/admin/orders'));
+    } catch (e) {
+      n.fail(errorMessage(e));
+    }
+  }
+  useEffect(() => {
+    load();
+  }, []);
+  async function action(o: Order, name: 'approve' | 'dispatch') {
+    if (
+      name === 'dispatch' &&
+      !o.isDemo &&
+      !confirm('この注文を設定された仕入先へ実送信します。実行しますか？')
+    )
+      return;
+    setBusy(o.id);
+    try {
+      const updated = await api<Order>(`/api/admin/orders/${o.id}/${name}`, { method: 'POST' });
+      n.success(
+        updated.status === 'simulated'
+          ? 'デモ送信を記録しました。外部への発注は行っていません。'
+          : labels[updated.status],
+      );
+      await load();
+    } catch (e) {
+      n.fail(errorMessage(e));
+    } finally {
+      setBusy('');
+    }
+  }
+  return (
+    <>
+      <p className="muted">お客様が確認した見積から作成された注文依頼です。</p>
+      <Notice message={n.error || n.message} type={n.error ? 'error' : 'success'} />
+      {items.length ? (
+        <div className="admin-card table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>注文番号</th>
+                <th>金額</th>
+                <th>状態</th>
+                <th>受付日時</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((o) => (
+                <tr key={o.id}>
+                  <td>
+                    <strong>{o.id.slice(0, 8)}</strong>
+                    <small>見積 {o.quoteId.slice(0, 8)}</small>
+                    {o.isDemo && <small>デモ注文</small>}
+                  </td>
+                  <td>{yen(o.total)}</td>
+                  <td>
+                    <span className="pill">{labels[o.status]}</span>
+                    {o.lastError && <p className="form-error">{o.lastError}</p>}
+                    {o.externalId && <small>受付 {o.externalId}</small>}
+                  </td>
+                  <td>{datetime(o.createdAt)}</td>
+                  <td>
+                    {o.status === 'pending_approval' ? (
+                      <button
+                        className="button primary small"
+                        disabled={busy === o.id}
+                        onClick={() => action(o, 'approve')}
+                      >
+                        承認する
+                      </button>
+                    ) : ['approved', 'failed'].includes(o.status) ? (
+                      <button
+                        className="button primary small"
+                        disabled={busy === o.id}
+                        onClick={() => action(o, 'dispatch')}
+                      >
+                        {o.isDemo ? 'デモ送信を実行' : '仕入先へ送信'}
+                      </button>
+                    ) : o.status === 'needs_reconciliation' ? (
+                      <span className="muted">仕入先に受付状況をご確認ください</span>
+                    ) : (
+                      <span className="muted">完了</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <Empty
+          title="注文依頼はまだありません"
+          detail="注文機能を有効にすると、発行済みの見積ページからお客様が注文を依頼できます。"
+        />
+      )}
+    </>
+  );
+}

@@ -1,0 +1,126 @@
+'use client';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { ArrowUpRight, Menu, Phone, X } from 'lucide-react';
+import { useState } from 'react';
+import { company } from '@/lib/company';
+import ChatWidget, { type ChatViewState } from './ChatWidget';
+import type { PublicConfig } from '@/lib/contracts';
+import { api } from './api';
+import { useEffect } from 'react';
+
+const nav = [
+  { href: '/products', label: '製品・サービス' },
+  { href: '/projects', label: '製作実績' },
+  { href: '/profile', label: '会社案内' },
+  { href: '/contact', label: 'お問い合わせ' },
+];
+export default function SiteShell({ children }: { children: React.ReactNode }) {
+  const path = usePathname();
+  const [menu, setMenu] = useState(false);
+  const [chatState, setChatState] = useState<ChatViewState>({ open: false, modal: false });
+  const [config, setConfig] = useState<PublicConfig | null>(null);
+  useEffect(() => {
+    api<PublicConfig>('/api/config')
+      .then(setConfig)
+      .catch(() => {});
+  }, []);
+  return (
+    <>
+      <div
+        className={`site-content${chatState.open ? ' chat-is-open' : ''}`}
+        inert={chatState.modal}
+      >
+        <header className="site-header">
+          <div className="container header-inner">
+            <Link
+              className="brand"
+              href="/"
+              onClick={() => setMenu(false)}
+              aria-label="アオキエンジ ホーム"
+            >
+              <span className="brand-mark">A</span>
+              <span className="brand-words">
+                <strong>AOKI ENG</strong>
+                <small>アオキエンジ株式会社</small>
+              </span>
+            </Link>
+            <nav className={`main-nav ${menu ? 'is-open' : ''}`} aria-label="メインナビゲーション">
+              {nav.map((n) => (
+                <Link
+                  href={n.href}
+                  onClick={() => setMenu(false)}
+                  aria-current={path === n.href ? 'page' : undefined}
+                  key={n.href}
+                >
+                  {n.label}
+                </Link>
+              ))}
+              <Link className="nav-contact" href="/contact" onClick={() => setMenu(false)}>
+                ご相談はこちら <ArrowUpRight size={16} />
+              </Link>
+            </nav>
+            <button
+              className="mobile-menu icon-button"
+              type="button"
+              onClick={() => setMenu(!menu)}
+              aria-label={menu ? 'メニューを閉じる' : 'メニューを開く'}
+              aria-expanded={menu}
+            >
+              {menu ? <X /> : <Menu />}
+            </button>
+          </div>
+        </header>
+        {config?.demoMode && (
+          <div className="demo-banner">デモ環境：商品・価格・注文は確認用です</div>
+        )}
+        <main id="main-content">{children}</main>
+        <footer className="site-footer">
+          <div className="container footer-grid">
+            <div>
+              <Link className="brand brand-light" href="/">
+                <span className="brand-mark">A</span>
+                <span className="brand-words">
+                  <strong>AOKI ENG</strong>
+                  <small>アオキエンジ株式会社</small>
+                </span>
+              </Link>
+              <p>
+                ものづくりの、その先まで。
+                <br />
+                設計から製作、据付まで一貫して支えます。
+              </p>
+            </div>
+            <div>
+              <h3>お問い合わせ</h3>
+              <p>
+                〒{company.postalCode}
+                <br />
+                {company.address}
+              </p>
+              <a className="footer-phone" href={`tel:${company.phone}`}>
+                <Phone size={18} />
+                {company.phone}
+              </a>
+            </div>
+            <div>
+              <h3>サイトマップ</h3>
+              {nav.map((n) => (
+                <Link href={n.href} key={n.href}>
+                  {n.label}
+                </Link>
+              ))}
+              <Link href="/privacy">プライバシー</Link>
+              <Link href="/admin/login">管理画面</Link>
+            </div>
+          </div>
+          <div className="container footer-bottom">
+            <span>© {new Date().getFullYear()} AOKI ENG CO., LTD.</span>
+            <span>FUKUOKA / JAPAN</span>
+          </div>
+        </footer>
+      </div>
+      <ChatWidget config={config} onStateChange={setChatState} />
+    </>
+  );
+}

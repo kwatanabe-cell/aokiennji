@@ -1,0 +1,37 @@
+[
+  {
+    "file": "hero.jpg",
+    "source": "http://www.aokieng.co.jp/images/hd_image01.jpg",
+    "bytes": 720720
+  },
+  {
+    "file": "silo.jpg",
+    "source": "http://www.aokieng.co.jp/products/images/b/005.jpg",
+    "bytes": 384031
+  },
+  {
+    "file": "tank.jpg",
+    "source": "http://www.aokieng.co.jp/products/images/b/041.jpg",
+    "bytes": 441375
+  },
+  {
+    "file": "furnace.jpg",
+    "source": "http://www.aokieng.co.jp/products/images/b/021.jpg",
+    "bytes": 219854
+  },
+  {
+    "file": "cart.jpg",
+    "source": "http://www.aokieng.co.jp/products/images/b/104.jpg",
+    "bytes": 420558
+  },
+  {
+    "file": "duct.jpg",
+    "source": "http://www.aokieng.co.jp/products/images/b/122.jpg",
+    "bytes": 495498
+  },
+  {
+    "file": "heat-exchanger.jpg",
+    "source": "http://www.aokieng.co.jp/products/images/b/118.jpg",
+    "bytes": 404069
+  }
+]
