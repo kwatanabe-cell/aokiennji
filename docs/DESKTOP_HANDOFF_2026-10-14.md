@@ -74,6 +74,15 @@ DBのコピー元は2026-10-15にSQLiteのバックアップAPIで作成し、�
 
 以下はLinux/macOS/WindowsのWSL等のBash用。確認済みのノートPC環境は **Node.js v24.12.0、npm 11.6.2、Next.js 16.3.8**。Node 24系とGitを用意する。Orgaの製品固有の操作・Linear連携は今回設定しておらず、IDEとして取得したプロジェクトを開けば作業を再開できる。
 
+**Ubuntu／DebianのWSLでは、依存をインストールする前にビルド用ツールを用意する。** `better-sqlite3` は環境によってネイティブビルドを行い、Python、`make`、C/C++コンパイラが必要（[node-gyp公式の要件](https://github.com/nodejs/node-gyp#on-unix)）。
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential python3
+```
+
+このプロジェクトの依存管理はnpmと `package-lock.json`。`pnpm` を追加でインストールする必要はなく、`npm ci` を使う。`better-sqlite3` のインストールが `Error: not found: make` で止まった場合も、上記を実行してからプロジェクト直下で `npm ci` を再実行する。
+
 1. デスクトップでGitHubの `main` を取得する。初めて取得する場合：
 
 ```sh
