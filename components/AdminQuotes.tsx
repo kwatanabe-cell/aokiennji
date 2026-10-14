@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { Quote, QuoteLine } from '@/lib/contracts';
 import { api, date, errorMessage, yen } from './api';
 import { Empty, Modal, Notice, useNotice } from './AdminCommon';
+import { ConversationDetail } from './AdminConversations';
 const labels: Record<Quote['status'], string> = {
   requested: '依頼受付',
   draft: '下書き',
@@ -13,6 +14,7 @@ const labels: Record<Quote['status'], string> = {
 export default function AdminQuotes() {
   const [items, setItems] = useState<Quote[]>([]),
     [edit, setEdit] = useState<Quote | null>(null),
+    [viewing, setViewing] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
   const n = useNotice();
   async function load() {
@@ -160,6 +162,15 @@ export default function AdminQuotes() {
               · {edit.email}
             </p>
             <p className="preline">{edit.message}</p>
+            {edit.conversationId && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() => setViewing(edit.conversationId!)}
+              >
+                チャットの会話とAI調査メモを見る
+              </button>
+            )}
             <div className="quote-editor-lines">
               {edit.lines.map((l, i) => (
                 <div className="quote-editor-line" key={i}>
@@ -271,6 +282,7 @@ export default function AdminQuotes() {
           </div>
         </Modal>
       )}
+      {viewing && <ConversationDetail id={viewing} onClose={() => setViewing(null)} />}
     </>
   );
 }

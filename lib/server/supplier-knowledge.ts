@@ -12,14 +12,15 @@ import type {
   SupplierKnowledgeRow,
 } from '../contracts';
 import { audit, byId, db, list, normalize, now, save, uid } from './db';
-import type { BusinessIntent } from '../chat-policy';
+import { businessIntents, type BusinessIntent } from '../chat-policy';
+import { checklist, consultationTopic, itemMention } from './consultation';
 
 // Deliberately curated public vocabulary: spreadsheet prose, company names,
 // hyperlinks and instructions are never copied into a customer response.
 const vocabulary: Record<string, string[]> = {
   耐熱金物: ['耐熱金物'],
   電気装置: ['電気装置'],
-  パッキン: ['パッキン', 'ぱっきん'],
+  パッキン: ['パッキン', 'ぱっきん', 'ガスケット', 'ジョイントシート'],
   溶接材料: ['溶接材料'],
   金網: ['金網'],
   ゴム製品: ['ゴム製品', 'ゴム'],
@@ -66,6 +67,10 @@ const vocabulary: Record<string, string[]> = {
 export const fieldLabels = Object.keys(vocabulary);
 
 function containsTerm(text: string, term: string) {
+  // "青銅" or "黄銅" (bronze, brass) is a material, not the copper field.
+  if (term === '銅') return /(?<![青黄赤])銅/.test(text.normalize('NFKC'));
+  // A "ジョイントシート" gasket is a packing, not a joint.
+  if (term === 'ジョイント') return /ジョイント(?!シート)/.test(text.normalize('NFKC'));
   if (term === 'プラ')
     return /プラ(?:[、,・/／\s。？！?]|を|の|が|は|製品|$)/.test(text.normalize('NFKC'));
   return normalize(text).includes(normalize(term));
@@ -75,6 +80,19 @@ export function fieldsFromText(text: string): string[] {
     vocabulary[field].some((term) => containsTerm(text, term)),
   );
   return found.filter((field) => !found.some((other) => other !== field && other.includes(field)));
+}
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Fields of the item the customer asks about. "ポンプのモーター用のベアリング"
+// names a pump only as where the item is used.
+export function itemFieldsFromText(text: string): string[] {
+  const normalized = text.normalize('NFKC');
+  return fieldsFromText(normalized).filter((field) =>
+    vocabulary[field].some(
+      (term) =>
+        containsTerm(normalized, term) &&
+        itemMention(normalized, new RegExp(escape(term.normalize('NFKC')))),
+    ),
+  );
 }
 function cellText(cell: ExcelJS.Cell): string {
   const v = cell.value;
@@ -244,9 +262,17 @@ export function availableFields(): string[] {
 }
 
 export function privateSupplierQuestion(message: string): boolean {
+  // "外注先の名前を知りたいわけではない" withdraws the question; "社内加工か外注か"
+  // asks how the work is done, which has a fixed public answer.
+  const text = message
+    .normalize('NFKC')
+    .replace(
+      /[^。、]*(?:知りたい|聞きたい|教えてほしい)(?:わけ|訳)では(?:ない|ありません)[^。、]*/g,
+      '',
+    );
   if (
-    /仕入|外注|取引先|取引口座|卸売|原価|仕切|商社|仕入先|ホームページ|\bHP\b|\bURL\b|https?:\/\//i.test(
-      message,
+    /仕入|外注(?:先|業者|会社|の会社|して(?:いる|る)会社)|取引先|取引口座|卸売|原価|仕切り?(?:価格|値|率|単価)|商社|仕入先|ホームページ|\bHP\b|\bURL\b|https?:\/\//i.test(
+      text,
     )
   )
     return true;
@@ -283,7 +309,7 @@ export function knowledgeTopic(
   if (privateSupplierQuestion(message)) return { mode: 'privacy', fields: [] };
   if (intent.model) return;
   const available = availableFields();
-  const matching = fieldsFromText(message).filter((f) => available.includes(f));
+  const matching = itemFieldsFromText(message).filter((f) => available.includes(f));
   if (matching.length) return { mode: 'fields', fields: matching };
   if (intent.topicField && available.includes(intent.topicField))
     return { mode: 'fields', fields: [intent.topicField] };
@@ -293,11 +319,13 @@ export function knowledgeTopic(
   )
     return { mode: 'fields', fields: available.slice(0, 12) };
   // A newly named field is a topic change, even if it is not registered.
-  if (fieldsFromText(message).length) return;
+  if (itemFieldsFromText(message).length) return;
   if (
     previous?.knowledge &&
     (intent.referencesPrevious ||
       intent.intent === 'general' ||
+      // "まだ型番が分からないのですが、いくらぐらい？" still asks about the field.
+      (previous.knowledge.mode === 'fields' && businessIntents(message).length > 0) ||
       /^(?:\d+\s*(?:個|台|枚|本)|必要な仕様)/.test(message.normalize('NFKC')))
   ) {
     const fields = previous.knowledge.fields.filter((f) => available.includes(f));
@@ -306,6 +334,9 @@ export function knowledgeTopic(
   }
 }
 
+// How an unregistered price, stock or delivery is answered. Said once per
+// conversation; later turns answer in conversation.
+export const CONFIRM_PHRASE = '仕様と数量をもとに担当者が確認してご案内します。';
 export function knowledgeReply(
   topic: KnowledgeTopic,
   settings: AppSettings,
@@ -330,7 +361,13 @@ export function knowledgeReply(
       quote: 'お見積り',
       order: 'ご注文',
     };
-    return `「${fields.join('」「')}」の${facts.map((f) => labels[f]).join('・')}についてですね。登録されているのは取扱分野のため、個別製品の条件は担当者が確認します。メーカー名や型番、必要な数量を教えてください。`;
+    const asked = facts.map((f) => labels[f]).join('・');
+    return `「${fields.join('」「')}」の${asked}は、${CONFIRM_PHRASE}`;
   }
-  return `「${fields.join('」「')}」の分野についてご相談いただけます。\n個別製品の仕様・対応可否、価格・在庫・納期は担当者が確認します。用途や必要な仕様、数量、ご希望の納期をお聞かせください。${settings.flags.humanHandoff ? '「担当者へのお問い合わせ」からもご相談いただけます。' : ''}`;
+  const points = fields.length === 1 ? consultationTopic(fields) : undefined;
+  return `「${fields.join('」「')}」の分野についてご相談いただけます。\n個別製品の仕様・対応可否、価格・在庫・納期は担当者が確認します。${
+    points
+      ? `選ぶときは、${checklist(points).join('、')}が分かると候補を絞り込めます。どのような用途でお使いになるか教えていただけますか？`
+      : '用途や必要な仕様、数量、ご希望の納期をお聞かせください。'
+  }${settings.flags.humanHandoff ? '画面下の「担当者に相談」からもご相談いただけます。' : ''}`;
 }

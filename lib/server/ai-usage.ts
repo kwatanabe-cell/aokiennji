@@ -12,6 +12,11 @@ const knownErrors = new Set([
   'business_fact_owned_locally',
   'private_response',
   'unsupported_commitment',
+  'unsupported_capability',
+  'internal_terms',
+  'unstated_condition',
+  'empty_supplement',
+  'invalid_research',
   'unapproved_sale',
   'hidden_fact',
   'output_limit',
@@ -23,7 +28,31 @@ const knownErrors = new Set([
   'timeout',
   'cancelled',
   'network_error',
+  'insufficient_quota',
 ]);
+// After the account reports no credits, OpenAI is not called for a while:
+// each failing call took about 6 seconds before the reply fell back.
+const QUOTA_PAUSE_MS = 10 * 60 * 1000;
+let quotaPausedUntil = 0;
+export function openaiQuotaPaused() {
+  return Date.now() < quotaPausedUntil;
+}
+export function pauseOpenaiForQuota(pause = true) {
+  quotaPausedUntil = pause ? Date.now() + QUOTA_PAUSE_MS : 0;
+}
+// "insufficient_quota" in an OpenAI error body or stream event.
+export function quotaError(text: string) {
+  return /insufficient_quota|credit_balance_exhausted|billing_hard_limit/.test(text);
+}
+// The newest finished OpenAI call failed for lack of credits: generated
+// replies and the staff research are stopped until credits are added.
+export function openaiQuotaAlert(): string | undefined {
+  const rows = db()
+    .prepare("SELECT json FROM ai_calls WHERE provider='openai' ORDER BY created_at DESC LIMIT 10")
+    .all() as { json: string }[];
+  const latest = rows.map((r) => JSON.parse(r.json) as AiCall).find((c) => c.completedAt);
+  return latest?.errorCode === 'insufficient_quota' ? latest.completedAt! : undefined;
+}
 const integer = (value: unknown): number | null =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 
@@ -102,30 +131,33 @@ export function beginAiCall(input: {
       if (record.completedAt) return;
       record.completedAt = now();
       record.durationMs = Math.round(performance.now() - start);
+      const name = error instanceof Error ? error.name : '';
+      const message = error instanceof Error ? error.message : '';
       record.outcome = accepted
         ? 'accepted'
-        : record.httpStatus !== null && (record.httpStatus < 200 || record.httpStatus >= 300)
+        : message === 'insufficient_quota' ||
+            (record.httpStatus !== null && (record.httpStatus < 200 || record.httpStatus >= 300))
           ? 'http_error'
           : record.httpStatus !== null
             ? 'rejected'
             : 'network_error';
-      const name = error instanceof Error ? error.name : '';
-      const message = error instanceof Error ? error.message : '';
       record.errorCode = accepted
         ? null
-        : record.outcome === 'http_error'
-          ? `http_${record.httpStatus}`
-          : name === 'TimeoutError'
-            ? 'timeout'
-            : name === 'AbortError'
-              ? 'cancelled'
-              : name === 'SyntaxError'
-                ? 'invalid_json'
-                : name === 'ZodError'
-                  ? 'invalid_schema'
-                  : knownErrors.has(message)
-                    ? message
-                    : 'network_error';
+        : message === 'insufficient_quota'
+          ? message
+          : record.outcome === 'http_error'
+            ? `http_${record.httpStatus}`
+            : name === 'TimeoutError'
+              ? 'timeout'
+              : name === 'AbortError'
+                ? 'cancelled'
+                : name === 'SyntaxError'
+                  ? 'invalid_json'
+                  : name === 'ZodError'
+                    ? 'invalid_schema'
+                    : knownErrors.has(message)
+                      ? message
+                      : 'network_error';
       if (
         record.outcome === 'rejected' &&
         ['timeout', 'cancelled', 'network_error', 'generation_failed'].includes(

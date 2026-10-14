@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { z } from 'zod';
 import type {
   AppSettings,
@@ -47,6 +47,7 @@ import {
   dispatchOrder,
   getPublicProduct,
   getQuoteByToken,
+  handOff,
   overview,
   publicProducts,
   requireFlag,
@@ -59,6 +60,7 @@ import { answerChat, currentMessages } from '@/lib/server/chat';
 import { commitPreview, previewUpload, sourceById, syncSource } from '@/lib/server/ingestion';
 import { aiProviderStatuses, checkAiProvider } from '@/lib/server/ai-setup';
 import { aiUsageReport } from '@/lib/server/ai-usage';
+import { researchNotes } from '@/lib/server/research';
 import {
   inquirySchema,
   productSchema,
@@ -161,6 +163,7 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
               const result = await answerChat(input.message, owner!, input.conversationId, {
                 onText: (text) => send('text', text),
                 signal,
+                defer: (work) => after(work),
               });
               send('result', result);
             } catch {
@@ -183,7 +186,9 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
         for (const cookie of cookieResponse.cookies.getAll()) response.cookies.set(cookie);
         return response;
       }
-      const result = await answerChat(input.message, owner, input.conversationId);
+      const result = await answerChat(input.message, owner, input.conversationId, {
+        defer: (work) => after(work),
+      });
       const response = ok(result);
       for (const cookie of cookieResponse.cookies.getAll()) response.cookies.set(cookie);
       return response;
@@ -199,17 +204,7 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
       requireFlag('humanHandoff');
       rateLimit(`inquiry:${clientKey(req)}`, 30, 60000);
       const input = inquirySchema.parse(await body(req));
-      if (input.conversationId) {
-        const conv = verifyConversation(input.conversationId, anonOwner(req));
-        const row = db().prepare('SELECT owner_id FROM conversations WHERE id=?').get(conv.id) as {
-          owner_id: string;
-        };
-        save(
-          'conversations',
-          { ...conv, status: 'handed_off', updatedAt: now() },
-          { owner_id: row.owner_id },
-        );
-      }
+      if (input.conversationId) handOff(verifyConversation(input.conversationId, anonOwner(req)));
       const inquiry: Inquiry = { ...input, id: uid(), status: 'new', notes: '', createdAt: now() };
       save('inquiries', inquiry);
       audit('inquiry.created', inquiry.id, '担当者への相談を受け付けました');
@@ -434,6 +429,7 @@ async function handle(req: NextRequest, context: { params: Promise<{ path: strin
       return ok({
         conversation: found<Conversation>('conversations', p[2]),
         messages: conversationMessages(p[2]),
+        research: researchNotes(p[2]),
       });
     }
     if (p[0] === 'admin' && p[1] === 'inquiries') {

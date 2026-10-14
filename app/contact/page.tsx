@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, CheckCircle2, Phone } from 'lucide-react';
 import SiteShell from '@/components/SiteShell';
 import { api, errorMessage } from '@/components/api';
+import { currentChat } from '@/components/chat-history';
 import { company } from '@/lib/company';
 import type { Inquiry, PublicConfig, Quote } from '@/lib/contracts';
 export default function Contact() {
@@ -23,9 +24,18 @@ export default function Contact() {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const subject = p.get('subject');
+    // Written by the chat's hand-off button: what the customer already told us.
+    const draft = p.get('conversationId') ? sessionStorage.getItem('aoki-handoff-draft') : null;
+    sessionStorage.removeItem('aoki-handoff-draft');
     setProductId(p.get('productId') || undefined);
     setQuote(p.get('quote') === '1');
-    if (subject) setForm((f) => ({ ...f, message: `${subject}について相談したいです。\n` }));
+    if (draft || subject)
+      setForm((f) => ({
+        ...f,
+        message: draft
+          ? `${subject ? `${subject}について相談したいです。\n` : ''}${draft}\n`
+          : `${subject}について相談したいです。\n`,
+      }));
     api<PublicConfig>('/api/config')
       .then(setConfig)
       .catch(() => {});
@@ -48,7 +58,7 @@ export default function Contact() {
             consent: true,
             conversationId:
               new URLSearchParams(location.search).get('conversationId') ||
-              sessionStorage.getItem('aoki-conversation') ||
+              currentChat()?.id ||
               undefined,
             productId,
             quantity: form.quantity,
@@ -66,7 +76,7 @@ export default function Contact() {
             consent: true,
             conversationId:
               new URLSearchParams(location.search).get('conversationId') ||
-              sessionStorage.getItem('aoki-conversation') ||
+              currentChat()?.id ||
               undefined,
           }),
         });

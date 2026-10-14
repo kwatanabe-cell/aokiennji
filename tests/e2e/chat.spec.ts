@@ -72,3 +72,53 @@ test('chat keeps the topic, reserves space and keeps the composer clear at diffe
     '取扱いを確認できません',
   );
 });
+
+test('a consultation hands off to the inquiry form with what the customer said', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '商品相談チャットを開く' }).click();
+  const panel = page.getByRole('dialog', { name: '商品相談チャット' });
+  const input = panel.getByRole('textbox', { name: '相談内容' });
+  const send = panel.getByRole('button', { name: 'メッセージを送信' });
+  await input.fill('工場の冷却水に使うバルブを探しています。配管は25Aで、手で開け閉めします。');
+  await send.click();
+  const replies = panel.locator('.chat-message.assistant');
+  await expect(replies).toHaveCount(1);
+  await expect(replies.last()).toContainText('25A');
+  await expect(replies.last()).not.toContainText('もう少し詳しく');
+  await input.fill('この内容で担当者に相談したいです');
+  await send.click();
+  await expect(replies).toHaveCount(2);
+  const handoff = panel.getByRole('link', { name: 'この内容で担当者に相談する' });
+  await expect(handoff).toBeVisible();
+  await handoff.click();
+  await expect(page).toHaveURL(/\/contact\?conversationId=/);
+  await expect(page.getByLabel('ご相談内容')).toHaveValue(/配管は25A/);
+});
+
+test('a consultation left for a long time moves to the past list in this browser', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '商品相談チャットを開く' }).click();
+  const panel = page.getByRole('dialog', { name: '商品相談チャット' });
+  await panel.getByRole('textbox', { name: '相談内容' }).fill('DEMO-CAST-01を売っていますか');
+  await panel.getByRole('button', { name: 'メッセージを送信' }).click();
+  await expect(panel.locator('.chat-message.assistant')).toHaveCount(1);
+  // Simulate a pause of 13 hours since the last message.
+  await page.evaluate(() => {
+    const current = JSON.parse(localStorage.getItem('aoki-chat-current')!);
+    current.updatedAt = new Date(Date.now() - 13 * 3600 * 1000).toISOString();
+    localStorage.setItem('aoki-chat-current', JSON.stringify(current));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '商品相談チャットを開く' }).click();
+  await expect(panel.getByText('何をお探しですか？')).toBeVisible();
+  await panel.getByRole('button', { name: /前回の相談を見る/ }).click();
+  await expect(panel.locator('.chat-archive')).toContainText('DEMO-CAST-01を売っていますか');
+  await expect(panel.locator('.chat-archive')).toContainText('閲覧のみ');
+  await panel.getByRole('button', { name: 'この相談を削除' }).click();
+  await expect(panel.getByRole('button', { name: '過去の相談' })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('aoki-chat-archive'))).toBe('[]');
+});

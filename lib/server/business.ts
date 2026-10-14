@@ -15,6 +15,7 @@ import type {
 import { db, list, byId, save, uid, now, normalize, getSettings, demoMode, audit } from './db';
 import { ApiError } from './auth';
 import { dispatchSupplierOrder } from './providers';
+import { openaiQuotaAlert } from './ai-usage';
 
 export function requireFlag(name: keyof AppSettings['flags']) {
   if (!getSettings().flags[name])
@@ -121,7 +122,19 @@ export function amount(lines: QuoteLine[], shipping: number, taxRate: number) {
   return { subtotal, tax, total: subtotal + shipping + tax };
 }
 export function customerQuote(q: Quote): Quote {
-  return { ...q, notes: '' };
+  const { conversationId: _conversation, ...shown } = q;
+  return { ...shown, notes: '' };
+}
+// The chat is marked as passed to the staff, keeping its owner.
+export function handOff(conversation: Conversation) {
+  const row = db().prepare('SELECT owner_id FROM conversations WHERE id=?').get(conversation.id) as
+    { owner_id: string } | undefined;
+  if (!row) return;
+  save(
+    'conversations',
+    { ...conversation, status: 'handed_off', updatedAt: now() },
+    { owner_id: row.owner_id },
+  );
 }
 export function createQuote(
   input: {
@@ -138,7 +151,10 @@ export function createQuote(
 ) {
   requireFlag('quoteRequests');
   if (!input.consent) throw new ApiError(400, 'consent_required', '同意が必要です。');
-  if (input.conversationId) verifyConversation(input.conversationId, owner);
+  // The staff opens the chat and its research notes from the quote request.
+  const conversation = input.conversationId
+    ? verifyConversation(input.conversationId, owner)
+    : undefined;
   let lines: QuoteLine[] = [];
   let status: Quote['status'] = 'requested';
   if (input.productId) {
@@ -164,6 +180,7 @@ export function createQuote(
   const q: Quote = {
     id: uid(),
     token: crypto.randomUUID() + crypto.randomUUID().replaceAll('-', ''),
+    ...(conversation ? { conversationId: conversation.id } : {}),
     name: input.name,
     company: input.company,
     email: input.email,
@@ -180,6 +197,7 @@ export function createQuote(
     isDemo: demoMode(),
   };
   save('quotes', q, { token: q.token });
+  if (conversation) handOff(conversation);
   audit('quote.created', q.id, '見積依頼を受け付けました');
   return customerQuote(q);
 }
@@ -396,6 +414,7 @@ export function overview(): Overview {
     Number((db().prepare(`SELECT count(*) n FROM ${table}`).get() as { n: number }).n);
   const inquiries = list<Inquiry>('inquiries'),
     orders = list<Order>('orders');
+  const quota = openaiQuotaAlert();
   return {
     products: count('products'),
     sources: count('sources'),
@@ -409,5 +428,6 @@ export function overview(): Overview {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, 10),
     demoMode: demoMode(),
+    ...(quota ? { openaiQuotaExhaustedAt: quota } : {}),
   };
 }

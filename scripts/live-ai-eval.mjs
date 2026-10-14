@@ -6,7 +6,7 @@ import { performance } from 'node:perf_hooks';
 import { channel } from 'node:diagnostics_channel';
 import { createHmac, randomUUID } from 'node:crypto';
 
-const root = resolve('.data/verification/live-ai-2026-10-07');
+const root = resolve(process.env.LIVE_AI_ROOT || '.data/verification/live-ai-2026-10-07');
 const dataDir = join(root, 'sandbox');
 const databaseFile = join(dataDir, 'aokienji.sqlite');
 const baseURL = process.env.LIVE_AI_TEST_URL || 'http://localhost:3212';
@@ -25,12 +25,14 @@ async function prepare() {
   original.close();
   const cloned = new Database(databaseFile);
   const saved = JSON.parse(cloned.prepare('SELECT json FROM settings WHERE id=1').get().json);
+  const decisionProvider = process.env.LIVE_AI_DECISION || 'jev';
+  const responseProvider = process.env.LIVE_AI_RESPONSE || 'openai';
   const settings = {
     ...saved,
-    decisionProvider: 'jev',
-    model: 'jev-latest',
-    responseProvider: 'openai',
-    responseModel: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+    decisionProvider,
+    model: decisionProvider === 'jev' ? 'jev-latest' : '',
+    responseProvider,
+    responseModel: responseProvider === 'openai' ? process.env.OPENAI_MODEL || 'gpt-4.1-mini' : '',
     flags: { ...saved.flags, webSearch: false, orders: false, autoOrder: false, autoQuote: false },
   };
   cloned.prepare('UPDATE settings SET json=? WHERE id=1').run(JSON.stringify(settings));
@@ -57,6 +59,33 @@ async function prepare() {
       responseProvider: settings.responseProvider,
       responseModel: settings.responseModel,
     }),
+  );
+}
+
+// Switch the providers of the existing sandbox between runs. Settings are read
+// per request, so the running server needs no restart.
+function configure() {
+  const [decisionProvider, responseProvider, research] = process.argv.slice(3);
+  if (
+    !['local', 'jev'].includes(decisionProvider) ||
+    !['local', 'openai'].includes(responseProvider)
+  )
+    throw Error('Use configure <local|jev> <local|openai> [research]');
+  const database = new Database(databaseFile);
+  const saved = JSON.parse(database.prepare('SELECT json FROM settings WHERE id=1').get().json);
+  const settings = {
+    ...saved,
+    decisionProvider,
+    model: decisionProvider === 'jev' ? 'jev-latest' : '',
+    responseProvider,
+    responseModel: responseProvider === 'openai' ? process.env.OPENAI_MODEL || 'gpt-4.1-mini' : '',
+    flags: { ...saved.flags, aiResearch: research === 'research' },
+  };
+  database.prepare('UPDATE settings SET json=? WHERE id=1').run(JSON.stringify(settings));
+  database.prepare('DELETE FROM rate_limits').run();
+  database.close();
+  console.log(
+    JSON.stringify({ decisionProvider, responseProvider, aiResearch: settings.flags.aiResearch }),
   );
 }
 
@@ -223,11 +252,18 @@ async function run() {
           isDemo: p.isDemo,
         })),
         timing: { firstStatusMs, firstTextMs, totalMs, textEvents },
+        routeReason: result.message.route,
+        handoff: result.message.handoff || null,
+        handoffDraft: result.message.handoffDraft || null,
+        suggestions: result.message.suggestions || [],
         route,
         previews,
         apiCalls,
       };
       const sanitized = redact(turnResult, database);
+      // A local-only run answers in milliseconds; stay under the chat rate limit.
+      if (process.env.LIVE_AI_DELAY_MS)
+        await new Promise((r) => setTimeout(r, Number(process.env.LIVE_AI_DELAY_MS)));
       transcript.turns.push({ ...sanitized.value, privateLeak: sanitized.privateLeak });
       write(`${outputName}-results.json`, report);
       console.log(
@@ -501,12 +537,13 @@ async function browserCheck() {
 
 try {
   if (mode === 'prepare') await prepare();
+  else if (mode === 'configure') configure();
   else if (mode === 'probe') await probe();
   else if (mode === 'run') await run();
   else if (mode === 'browser') await browserCheck();
   else if (mode === 'usage') await exportUsage();
   else if (mode === 'admin') await adminUsageCheck();
-  else throw Error('Use prepare, probe, run, browser, usage or admin');
+  else throw Error('Use prepare, configure, probe, run, browser, usage or admin');
 } catch (error) {
   console.error(
     error.code || error.name,

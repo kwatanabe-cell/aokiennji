@@ -182,7 +182,7 @@ it('preserves the locally recognized price request when Jev identifies its field
   const result = await answerChat('液体の流れを止める部品の価格は？', 'ambiguous-price');
   expect(result.message.intent).toBe('price');
   expect(result.message.knowledge?.fields).toEqual(['バルブ']);
-  expect(result.message.content).toContain('価格について');
+  expect(result.message.content).toContain('「バルブ」の価格は');
   expect(network).toHaveBeenCalledTimes(1);
   expect(network.mock.calls[0][0]).toContain('typesafe.ai');
 });
@@ -302,24 +302,31 @@ it('records both providers with usage and links calls to one actual customer mes
     expect(saved).not.toContain(secret);
   expect(aiUsageReport({ provider: 'openai', limit: 1 }).total).toBe(1);
 });
-it('keeps billed usage of rejected text and its exact internal reason', async () => {
+it('rewrites a rejected draft once and keeps the billed usage and reason of each attempt', async () => {
   mockServices('直径は25ミリです。');
   const result = await answerChat('DEMO-GLASS-01の用途を相談したい', 'rejected-usage');
   expect(result.message.responseProvider).toBe('local');
   const report = aiUsageReport();
-  expect(report.items[0]).toMatchObject({
-    httpStatus: 200,
-    outcome: 'rejected',
-    errorCode: 'unsupported_number',
-    usage: { inputTokens: 400, outputTokens: 80 },
-  });
+  expect(report.items).toHaveLength(2);
+  for (const item of report.items)
+    expect(item).toMatchObject({
+      httpStatus: 200,
+      outcome: 'rejected',
+      errorCode: 'unsupported_number',
+      usage: { inputTokens: 400, outputTokens: 80 },
+    });
   expect(report.summaries[0]).toMatchObject({
-    calls: 1,
-    httpSuccess: 1,
+    calls: 2,
+    httpSuccess: 2,
     accepted: 0,
-    rejected: 1,
-    usageReportedCalls: 1,
+    rejected: 2,
+    usageReportedCalls: 2,
   });
+  const retry = JSON.parse(JSON.parse(network.mock.calls[1][1]!.body!).input);
+  expect(retry.previousAttemptRejected).toContain('数値');
+  // The fallback continues the consultation about the named product.
+  expect(result.message.content).toContain('耐熱ガラス');
+  expect(result.message.content).not.toContain('もう少し詳しく');
 });
 it('records Jev HTTP failure as an actual call with unknown usage, and skips private queries entirely', async () => {
   network.mockResolvedValue({

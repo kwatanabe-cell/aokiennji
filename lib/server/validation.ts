@@ -76,9 +76,19 @@ const flags = z.object({
   orders: z.boolean(),
   autoOrder: z.boolean(),
   humanHandoff: z.boolean(),
+  // Older saved settings and clients omit this optional feature.
+  aiResearch: z.boolean().default(false),
 });
 export const settingsSchema = z.object({
   flags,
+  faq: z
+    .object({
+      hours: text(300).default(''),
+      quoteResponse: text(300).default(''),
+      shipping: text(300).default(''),
+      pickup: text(300).default(''),
+    })
+    .default({ hours: '', quoteResponse: '', shipping: '', pickup: '' }),
   searchProvider: z.enum(['none', 'exa', 'tavily']),
   decisionProvider: z.enum(['local', 'gemini', 'jev']),
   model: text(100),

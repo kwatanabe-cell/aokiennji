@@ -238,3 +238,17 @@ describe('customer field guidance', () => {
     noPrivateData(history.filter((m) => m.role === 'assistant'));
   });
 });
+
+it('treats a gate valve as a product while wholesale prices stay private', async () => {
+  const { privateSupplierQuestion } = await import('../lib/server/supplier-knowledge');
+  expect(privateSupplierQuestion('仕切弁とボール弁の違いは？')).toBe(false);
+  for (const question of ['仕切価格を教えて', '仕切り値はいくら？', '仕入先はどこ？'])
+    expect(privateSupplierQuestion(question)).toBe(true);
+});
+
+it('reads bronze and brass as materials, not the copper field', async () => {
+  const { fieldsFromText } = await import('../lib/server/supplier-knowledge');
+  expect(fieldsFromText('青銅のゲートバルブ')).toEqual(['バルブ']);
+  expect(fieldsFromText('黄銅の継手')).toEqual(['継手']);
+  expect(fieldsFromText('銅の板材を探しています')).toContain('銅');
+});

@@ -1459,6 +1459,79 @@ label small {
   color: #4478a6;
   overflow-wrap: anywhere;
 }
+.chat-previous {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 18px;
+  color: #477095;
+  font-size: 12px;
+  text-decoration: underline;
+}
+.chat-archive {
+  display: grid;
+  gap: 10px;
+}
+.chat-archive-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.chat-archive-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #477095;
+  font-size: 12px;
+}
+.chat-archive-note {
+  margin: 0;
+  color: #8594a4;
+  font-size: 11px;
+}
+.chat-archive-item {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid #dfe7ee;
+  border-radius: 9px;
+  background: #fcfdfe;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.chat-archive-item strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+.chat-archive-item small {
+  font-size: 11px;
+  color: #8594a4;
+}
+.chat-archive-item:hover {
+  background: #f0f6fc;
+}
+.chat-handoff {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  background: var(--navy);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.chat-handoff:hover {
+  background: #1d4166;
+}
+.chat-handoff svg {
+  flex-shrink: 0;
+}
 .chat-suggestions {
   display: flex;
   flex-wrap: wrap;
@@ -2358,6 +2431,36 @@ label small {
   font-size: 10px;
   color: var(--muted);
 }
+.research-notes {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border: 1px solid #d5e1ed;
+  border-left: 4px solid #417cac;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+.research-notes h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.research-note + .research-note {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #e3eaf1;
+}
+.research-note td small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.research-note td a {
+  overflow-wrap: anywhere;
+}
+.research-note td small.research-warning {
+  color: #9a5b00;
+  font-weight: 700;
+}
 .quote-editor-line {
   display: grid;
   grid-template-columns: 3fr 1fr 1.5fr auto;
@@ -3170,6 +3273,11 @@ label small {
 }
 .ai-setup-card .admin-notice {
   margin-block: 16px;
+}
+.ai-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .ai-setup-steps {
   padding-left: 22px;

@@ -12,7 +12,7 @@ import type {
   Supplier,
 } from '../contracts';
 import { safeFetch } from './safe-fetch';
-import { businessIntents, type BusinessIntent } from '../chat-policy';
+import { requestedFacts, socialOnly, stripCourtesy, type BusinessIntent } from '../chat-policy';
 import { beginAiCall } from './ai-usage';
 import { jevEndpoint } from './jev-config';
 
@@ -27,8 +27,10 @@ const intents = [
   'general',
 ] as const;
 export function localIntent(message: string): QueryIntent {
-  const text = message.normalize('NFKC');
-  const facts = businessIntents(text);
+  const original = message.normalize('NFKC');
+  // "ありがとう。では台車の件ですが…" is judged by the request after the thanks.
+  const text = stripCourtesy(original) || original;
+  const facts = requestedFacts(text);
   const business = (['quote', 'order', 'stock', 'lead_time', 'price'] as BusinessIntent[]).find(
     (kind) => facts.includes(kind),
   );
@@ -36,14 +38,32 @@ export function localIntent(message: string): QueryIntent {
     business ||
     (/図面|製作|製造|設計|特注|オーダーメイド/.test(text)
       ? 'custom'
-      : /^(こんにちは|こんばんは|おはよう|初めまして|はじめまして|ありがとう|助か|了解|わかりました|分かりました|なるほど|どうも|よろしく|何ができ|何を相談|何を扱|どんな会社|どんなこと)/.test(
-            text.trim(),
-          )
+      : socialOnly(original) ||
+          /^(何ができ|何を相談|何を扱|どんな会社|どんなこと)/.test(text.trim())
         ? 'general'
         : 'product');
-  const model = text.match(
-    /[A-Za-z][A-Za-z0-9]*(?:[-_－][A-Za-z0-9]+)+|[A-Za-z]{2,}[0-9]+[A-Za-z0-9]*/,
-  )?.[0];
+  // Material grades and standards ("SUS316", "SS400") are conditions, not
+  // product models. "B60" (a belt) and "6205DDU" (a bearing) are models, but
+  // a thread "M16", a size "W600" or an alloy "A5052" is not.
+  const model = [
+    ...text.matchAll(
+      /[A-Za-z][A-Za-z0-9]*(?:[-_－][A-Za-z0-9]+)+|[A-Za-z]{2,}[0-9]+[A-Za-z0-9]*|\b[A-Za-z]\d{2,4}(?![A-Za-z0-9.])|\b\d{3,5}(?:ZZ|DDU|DU|VV|LLU|LLB|LLH|2RS|RS|NR|NSE|Z|N)(?:C[2-5]|CM)?\b/gi,
+    ),
+  ]
+    .map((m) => m[0])
+    // "6305ZZはC3に…6305ZZC3で" corrects the model: the longer one is meant.
+    .filter(
+      (candidate, _, all) =>
+        !all.some((other) => other !== candidate && other.startsWith(candidate)),
+    )
+    // A series name without digits ("レッドS-II B-60") comes after a model.
+    .sort((a, b) => Number(/\d/.test(b)) - Number(/\d/.test(a)))
+    .find(
+      (candidate) =>
+        !/^(?:SUS|SS|SCS|SCH|SUH|SPCC|SPHC|SPCD|SECC|SGP|STPG|STK|STKR|SCM|SKD|SKH|SM|SWCH|JIS|NBR|EPDM|FKM|PTFE|PVC|ABS)[-\d]*[A-Z]?L?$/i.test(
+          candidate,
+        ) && !/^(?:[MWDHLTtR]\d+|[AC]\d{4})$/.test(candidate),
+    );
   const terms = [
     ...new Set(
       [model, ...text.split(/[\s、。？?（）()]+/).filter(Boolean)].filter((x): x is string => !!x),
@@ -51,7 +71,7 @@ export function localIntent(message: string): QueryIntent {
   ].slice(0, 10);
   const referencesPrevious =
     !model &&
-    /^(それ|そちら|こちら|これ|この|その|さっき|先ほど|今の|では|じゃあ|あと|ちなみに|何日|何週間|いつ|どれくらい|どのくらい|いくら|おいくら|価格|値段|単価|在庫|納期|届く|発送|配送|到着|見積|注文|発注|お願い|ありがとう|助か|了解|わかりました|分かりました|なるほど|[1-4一二三四](番|つ))/.test(
+    /^(それ|そちら|こちら|これ|この|その|さっき|先ほど|今の|では|じゃあ|あと|ちなみに|はい|ええ|うん|分から|わから|何日|何週間|いつ|どれくらい|どのくらい|いくら|おいくら|価格|値段|単価|在庫|納期|届く|発送|配送|到着|見積|注文|発注|お願い|ありがとう|助か|了解|わかりました|分かりました|なるほど|[1-4一二三四](番|つ))/.test(
       text.trim(),
     );
   return { intent, terms, model, confidence: 1, provider: 'local', referencesPrevious };
@@ -147,7 +167,7 @@ export async function classifyQuery(
                 field: {
                   type: 'choice',
                   instructions:
-                    'Choose the single approved product field that best matches the requested item or use case. none if unrelated or ambiguous. This is relevance, never sales approval.',
+                    'Choose the single approved product field of the requested item itself, not of the equipment it is used in (bearings for a pump motor are not a pump). none if unrelated or ambiguous. This is relevance, never sales approval.',
                   criteria: { none: 'No reliable match', ...fieldOptions },
                 },
               }

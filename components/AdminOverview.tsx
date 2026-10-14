@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import type { Overview } from '@/lib/contracts';
 import { api, datetime, errorMessage } from './api';
-import { Empty } from './AdminCommon';
+import { Empty, Notice } from './AdminCommon';
 export default function AdminOverview({ navigate }: { navigate: (tab: string) => void }) {
   const [data, setData] = useState<Overview | null>(null),
     [error, setError] = useState('');
@@ -54,6 +54,12 @@ export default function AdminOverview({ navigate }: { navigate: (tab: string) =>
           相談を確認 <ArrowRight size={18} />
         </button>
       </div>
+      {data.openaiQuotaExhaustedAt && (
+        <Notice
+          type="error"
+          message={`OpenAIの利用残高（クレジット）が不足しているため、${datetime(data.openaiQuotaExhaustedAt)}以降、生成AIによる回答と担当者向けのAI調査が止まっています。チャットは登録情報と決まった文で回答を続けています。OpenAIの管理画面でクレジットを追加してください。`}
+        />
+      )}
       <div className="stat-grid">
         {stats.map((s) => (
           <button type="button" className="stat-card" key={s.id} onClick={() => navigate(s.id)}>

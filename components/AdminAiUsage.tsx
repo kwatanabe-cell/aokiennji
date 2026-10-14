@@ -222,7 +222,14 @@ export default function AdminAiUsage() {
                           <small>{call.provider}</small>
                         </td>
                         <td>
-                          {call.purpose === 'classification' ? '質問・分野の判定' : '相談文の生成'}
+                          {
+                            {
+                              classification: '質問・分野の判定',
+                              response: '相談文の生成',
+                              research: '価格・納期の調査',
+                              research_decision: '調査の判定',
+                            }[call.purpose]
+                          }
                           <small>
                             {scopes[call.context.scope]} · {call.model}
                           </small>

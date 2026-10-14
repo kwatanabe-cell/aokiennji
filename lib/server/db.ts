@@ -44,6 +44,8 @@ export function db(): Database.Database {
     CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, kind TEXT NOT NULL, expires_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS rate_limits (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, reset_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS import_previews (id TEXT PRIMARY KEY, source_id TEXT NOT NULL, expires_at INTEGER NOT NULL, json TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS research_notes (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, created_at TEXT NOT NULL, json TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS research_notes_conversation ON research_notes(conversation_id);
   `);
   conn
     .prepare('INSERT OR IGNORE INTO settings(id,json) VALUES(1,?)')
@@ -182,7 +184,12 @@ export function getSettings(): AppSettings {
   const saved = JSON.parse(
     (db().prepare('SELECT json FROM settings WHERE id=1').get() as { json: string }).json,
   );
-  return { ...DEFAULT_SETTINGS, ...saved, flags: { ...DEFAULT_SETTINGS.flags, ...saved.flags } };
+  return {
+    ...DEFAULT_SETTINGS,
+    ...saved,
+    flags: { ...DEFAULT_SETTINGS.flags, ...saved.flags },
+    faq: { ...DEFAULT_SETTINGS.faq, ...saved.faq },
+  };
 }
 export function putSettings(s: AppSettings) {
   db().prepare('UPDATE settings SET json=? WHERE id=1').run(JSON.stringify(s));

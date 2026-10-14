@@ -10,6 +10,11 @@ const options: [keyof Flags, string, string][] = [
   ['showStock', '在庫を表示', '確認済みの在庫数を案内します'],
   ['showLeadTime', '納期を表示', '確認済みの納期目安を案内します'],
   ['webSearch', 'Web検索', '登録情報がない場合に公開情報を検索します'],
+  [
+    'aiResearch',
+    'AIによる価格・納期の調査（担当者向け）',
+    '価格・在庫・納期・送料を聞かれた品目を、メーカー・通販・運送会社・仕入先のサイトで調べ、会話の「AI調査メモ」に残します。お客様には表示しません',
+  ],
   ['quoteRequests', '見積依頼を受け付ける', '数量・連絡先を聞き、見積案件を作成します'],
   ['autoQuote', '自動見積', '有効な登録価格がある商品から見積を発行します'],
   ['orders', '注文依頼を受け付ける', '発行した見積から顧客が注文を依頼できます'],
@@ -85,7 +90,7 @@ export default function AdminSettings() {
           <section className="admin-card ai-setup-card">
             <h2>AIチャットの接続設定</h2>
             <p className="muted">
-              登録情報で分かる質問はそのまま回答します。曖昧な相談はJevで整理し、生成AIが用途・仕様の相談を補助します。
+              価格・在庫・納期など登録情報で決まる質問はそのまま回答し、それ以外の相談は会話の流れを踏まえて生成AIが回答します。
             </p>
             <div className="admin-notice" role="status">
               {form.responseProvider === 'local'
@@ -94,21 +99,38 @@ export default function AdminSettings() {
                   ? '生成AIを選択しています。設定を保存後、「接続を確認」で実通信を確認してください。'
                   : `生成AIの接続は未完了です。${form.responseProvider === 'openai' ? 'OPENAI_API_KEY' : 'GEMINI_API_KEY'} をサーバーに設定してください。`}
             </div>
-            <button
-              type="button"
-              className="button secondary small"
-              onClick={() =>
-                setForm({
-                  ...form,
-                  decisionProvider: 'jev',
-                  model: 'jev-latest',
-                  responseProvider: 'openai',
-                  responseModel: 'gpt-4.1-mini',
-                })
-              }
-            >
-              Jev＋OpenAIの構成を選ぶ
-            </button>
+            <div className="ai-presets">
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    decisionProvider: 'local',
+                    model: '',
+                    responseProvider: 'openai',
+                    responseModel: 'gpt-4.1-mini',
+                  })
+                }
+              >
+                OpenAIの構成を選ぶ（推奨）
+              </button>
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={() =>
+                  setForm({
+                    ...form,
+                    decisionProvider: 'jev',
+                    model: 'jev-latest',
+                    responseProvider: 'openai',
+                    responseModel: 'gpt-4.1-mini',
+                  })
+                }
+              >
+                Jev＋OpenAIの構成を選ぶ
+              </button>
+            </div>
             <ol className="ai-setup-steps">
               <li>
                 <a href="https://console.typesafe.ai/" target="_blank" rel="noreferrer">
@@ -137,19 +159,27 @@ export default function AdminSettings() {
               <dl>
                 <dt>ローカルで確定</dt>
                 <dd>
-                  登録済み商品の照合、価格・在庫・納期、数量計算、公開範囲、見積・注文の手続き案内。複数の質問にも登録値で回答します。
+                  登録済み商品の照合、価格・在庫・納期、数量・税込の計算、公開範囲、見積・注文・取り置きの手続き、担当者への相談方法、送料・値引き・支払条件・会社情報の案内。
                 </dd>
-                <dt>Jev等で解釈</dt>
+                <dt>OpenAI等で会話</dt>
                 <dd>
-                  商品名が曖昧なとき、公開可能な分野・資料候補との関連性を判断します。型番や分野が明確な質問は分類APIを省略します。
+                  用途・仕様の相談、比較、条件の整理と要約、短い返事への応答。お客様が伝えた条件を踏まえて答えます。価格・在庫・納期や約束は生成AIに書かせず、不適切な表現は理由を添えて1回だけ書き直させます。
                 </dd>
-                <dt>OpenAI等で相談を補助</dt>
+                <dt>Jev（任意）</dt>
                 <dd>
-                  用途や仕様の整理、比較の観点、次に必要な質問を作ります。価格・在庫・納期や販売承認は生成AIに確定させません。
+                  曖昧な商品説明から取扱分野を推定します。推奨構成では使わず、分野の判断も生成AIが会話の中で行います。
                 </dd>
                 <dt>事実の質問と相談が混在</dt>
                 <dd>
                   事実の回答を先に表示し、AIの補足を続けて表示します。AIが失敗しても、確定した登録値の回答は保持します。
+                </dd>
+                <dt>AIを使わないとき</dt>
+                <dd>
+                  会話からお客様の条件を拾い、確認ポイントと担当者への相談方法を組み立てて回答します。
+                </dd>
+                <dt>担当者への引継ぎ</dt>
+                <dd>
+                  相談が進むと「この内容で担当者に相談する」ボタンを表示し、相談内容を入力した問い合わせフォームを開きます。
                 </dd>
               </dl>
               <p className="muted">
@@ -323,6 +353,32 @@ export default function AdminSettings() {
                 onChange={(e) => setForm({ ...form, welcomeMessage: e.target.value })}
               />
             </label>
+          </section>
+          <section className="admin-card">
+            <h2>よくある質問への回答</h2>
+            <p className="muted">
+              チャットはここに書いた内容をそのまま案内します。空欄の項目は「担当者が確認します」と答えます。
+            </p>
+            {(
+              [
+                ['hours', '営業時間・電話の受付時間', '例：平日 8:30〜17:30（土日祝休み）'],
+                ['quoteResponse', '見積回答の目安', '例：通常1〜2営業日'],
+                ['shipping', '送料の考え方', '例：北九州市内は配達無料、その他は実費'],
+                ['pickup', '来社での引き取り', '例：在庫品は事前のお電話で引き取り可能です'],
+              ] as const
+            ).map(([key, label, placeholder]) => (
+              <label key={key}>
+                {label}
+                <input
+                  value={form.faq[key]}
+                  maxLength={300}
+                  placeholder={placeholder}
+                  onChange={(e) =>
+                    setForm({ ...form, faq: { ...form.faq, [key]: e.target.value } })
+                  }
+                />
+              </label>
+            ))}
           </section>
           <button className="button primary" disabled={busy}>
             {busy ? '保存中…' : '設定を保存する'}

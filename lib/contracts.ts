@@ -23,9 +23,20 @@ export type Flags = {
   orders: boolean;
   autoOrder: boolean;
   humanHandoff: boolean;
+  // Staff-only research of prices, lead times and shipping on the web.
+  aiResearch: boolean;
 };
+// Answers to routine questions, written by the company. A blank answer makes
+// the chat say that the staff will confirm instead.
+export interface CompanyFaq {
+  hours: string;
+  quoteResponse: string;
+  shipping: string;
+  pickup: string;
+}
 export interface AppSettings {
   flags: Flags;
+  faq: CompanyFaq;
   searchProvider: 'none' | 'exa' | 'tavily';
   decisionProvider: 'local' | 'gemini' | 'jev';
   model: string;
@@ -164,8 +175,67 @@ export interface ChatMessage {
   factualIntents?: ('price' | 'stock' | 'lead_time' | 'quote' | 'order')[];
   presentation?: 'products' | 'reply' | 'selection';
   requestedQuantity?: number;
+  // Parts of a fact question answered from registered values, kept so the
+  // reply can be rebuilt with the same wording.
+  factDetail?: { unit?: string; taxIncluded?: boolean; shipping?: boolean; deadline?: boolean };
   responseProvider?: 'local' | 'openai' | 'gemini';
   groundingHash?: string;
+  // Route reason from the chat policy (CHAT_ROUTE_LABELS key).
+  route?: string;
+  // Content depends on this conversation (generated text or a local summary),
+  // so it cannot be rebuilt from registered facts alone.
+  composed?: boolean;
+  // A next step offered under the reply: an inquiry or a quote request with
+  // the conversation attached and the draft placed in the form.
+  handoff?: 'inquiry' | 'quote';
+  handoffProductId?: string;
+  handoffDraft?: string;
+}
+export type ResearchAspect = 'price' | 'lead_time' | 'stock' | 'shipping';
+export const RESEARCH_ASPECT_LABELS: Record<ResearchAspect, string> = {
+  price: '価格',
+  lead_time: '出荷・納期',
+  stock: '在庫',
+  shipping: '配送日数・送料',
+};
+// What the research found on one web page. Shown to staff only.
+export interface ResearchFinding {
+  aspect: ResearchAspect;
+  // As written on the page, e.g. "¥18,700(税込)" or "2～3日出荷".
+  value: string;
+  note: string;
+  title: string;
+  url: string;
+  source: 'maker' | 'retailer' | 'carrier' | 'supplier' | 'other';
+  // matched: the value is on the page fetched by this server. partial: only
+  // some of it, or a short word that alone proves little. mismatch: the page
+  // was read but does not say this (likely misread). unreachable: the site
+  // refused automated access, so a person has to check it.
+  check: 'matched' | 'partial' | 'mismatch' | 'unreachable';
+  // Probability from the decision model that the page is about the item.
+  relevance: number | null;
+  // Whether the page shows the model or size the customer asked for; false
+  // means the value may belong to another variant.
+  itemOnPage?: boolean;
+  supplierName?: string;
+}
+export interface ResearchNote {
+  id: string;
+  conversationId: string;
+  turnId: string;
+  createdAt: string;
+  completedAt: string | null;
+  status: 'running' | 'done' | 'failed';
+  subject: string;
+  aspects: ResearchAspect[];
+  destination?: string;
+  // As the customer wrote it ("10個、6個"); older notes hold a number.
+  quantity?: string | number;
+  findings: ResearchFinding[];
+  summary: string;
+  // Who judged that research was needed.
+  decidedBy: 'jev' | 'local';
+  error?: string;
 }
 export interface Conversation {
   id: string;
@@ -211,6 +281,8 @@ export interface QuoteLine {
 export interface Quote {
   id: string;
   token: string;
+  // The chat the request came from, for the staff only.
+  conversationId?: string;
   name: string;
   company: string;
   email: string;
@@ -263,7 +335,7 @@ export interface AiCall {
   createdAt: string;
   completedAt: string | null;
   provider: 'openai' | 'jev';
-  purpose: 'classification' | 'response';
+  purpose: 'classification' | 'response' | 'research' | 'research_decision';
   context: AiUsageContext;
   model: string;
   endpoint: string;
@@ -313,6 +385,8 @@ export interface Overview {
   pendingOrders: number;
   recentEvents: AuditEvent[];
   demoMode: boolean;
+  // When the newest OpenAI call failed for lack of credits.
+  openaiQuotaExhaustedAt?: string;
 }
 export interface ImportRowError {
   row: number;
@@ -376,7 +450,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     orders: false,
     autoOrder: false,
     humanHandoff: true,
+    aiResearch: false,
   },
+  faq: { hours: '', quoteResponse: '', shipping: '', pickup: '' },
   searchProvider: 'none',
   decisionProvider: 'local',
   model: '',
