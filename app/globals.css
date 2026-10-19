@@ -4338,7 +4338,7 @@ label small {
     display: block;
     position: fixed;
     inset: 72px 0 0;
-    z-index: 1;
+    z-index: 64;
     background: #071c3273;
     backdrop-filter: blur(3px);
   }
@@ -4789,6 +4789,9 @@ label small {
   .main-nav .nav-contact {
     padding: 15px 26px;
     font-size: 15px;
+  }
+  .contact-form .form-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

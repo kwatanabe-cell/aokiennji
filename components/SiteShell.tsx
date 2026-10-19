@@ -60,14 +60,6 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
                 ご相談はこちら <ArrowUpRight size={16} />
               </Link>
             </nav>
-            {menu && (
-              <button
-                className="mobile-nav-scrim"
-                type="button"
-                aria-label="メニューを閉じる"
-                onClick={() => setMenu(false)}
-              />
-            )}
             <button
               className="mobile-menu icon-button"
               type="button"
@@ -79,6 +71,14 @@ export default function SiteShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </header>
+        {menu && (
+          <button
+            className="mobile-nav-scrim"
+            type="button"
+            aria-label="メニューを閉じる"
+            onClick={() => setMenu(false)}
+          />
+        )}
         {config?.demoMode && (
           <div className="demo-banner">デモ環境：商品・価格・注文は確認用です</div>
         )}
